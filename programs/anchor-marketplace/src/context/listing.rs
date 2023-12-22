@@ -5,13 +5,13 @@ use anchor_spl::{
     token::{Mint, TokenAccount}, 
     metadata::{Metadata, MetadataAccount, MasterEditionAccount,
     mpl_token_metadata::{
-        instructions::{TransferCpi, TransferCpiAccounts, TransferInstructionArgs, DelegateCpi, DelegateCpiAccounts, DelegateInstructionArgs, LockCpi, LockCpiAccounts, LockInstructionArgs},
+        instructions::{DelegateCpi, DelegateCpiAccounts, DelegateInstructionArgs, LockCpi, LockCpiAccounts, LockInstructionArgs},
         types::{TokenStandard, Collection},
     }}, 
     associated_token::AssociatedToken
 };
 pub use anchor_spl::token::Token;
-use mpl_token_metadata::types::{TransferArgs, DelegateArgs, LockArgs };
+use mpl_token_metadata::types::{DelegateArgs, LockArgs };
 
 pub use crate::state::*;
 pub use crate::errors::*;
@@ -41,13 +41,6 @@ pub struct List<'info> {
         space = Listing::INIT_SPACE,
     )]
     pub listing: Account<'info, Listing>,
-    #[account(
-        init_if_needed,
-        payer = lister,
-        associated_token::mint = nft,
-        associated_token::authority = listing,
-    )]
-    pub listing_vault: Option<Account<'info, TokenAccount>>,
 
     pub collection: Account<'info, Mint>,
     #[account(mut)]
@@ -67,72 +60,6 @@ pub struct List<'info> {
 
 impl<'info> List<'info> {
     pub fn list(
-        &mut self,
-        price: u64,
-    ) -> Result<()> {
-
-        require!(self.metadata.token_standard.clone().unwrap() == TokenStandard::NonFungible, MarketplaceError::InvalidTokenStandard);
-        require!(self.metadata.collection.clone().unwrap() == Collection{verified: true, key: self.collection.key()}, MarketplaceError::InvalidCollection); 
-
-        self.listing.set_inner(
-            Listing {
-                lister: self.lister.key(),
-                nft: self.nft.key(),
-                collection: self.collection.key(),
-                price,
-            }
-        );
-
-        let transfer_program = self.token_program.to_account_info();
-        let token = &self.lister_ata.to_account_info();
-        let token_owner = &self.lister.to_account_info();
-        let destination_token = &self.listing_vault.as_mut().unwrap().to_account_info();
-        let destination_owner = &self.listing.to_account_info();
-        let mint = &self.nft.to_account_info();
-        let metadata = &self.metadata.to_account_info();
-        let edition = &self.edition.to_account_info();
-        let authority = &self.lister.to_account_info();
-        let payer = &self.lister.to_account_info();
-        let system_program = &self.system_program.to_account_info();
-        let sysvar_instructions = &self.sysvar_instruction.to_account_info();
-        let spl_token_program = &self.token_program.to_account_info();
-        let spl_ata_program = &self.associated_token_program.to_account_info();        
-        
-        let transfer_cpi = TransferCpi::new(
-            &transfer_program,
-            TransferCpiAccounts {
-                token,
-                token_owner,
-                destination_token,
-                destination_owner,
-                mint,
-                metadata,
-                edition: Some(edition),
-                token_record: None,
-                destination_token_record: None,
-                authority,
-                payer,
-                system_program,
-                sysvar_instructions,
-                spl_token_program,
-                spl_ata_program,
-                authorization_rules_program: None,
-                authorization_rules: None,
-            },
-            TransferInstructionArgs {
-                transfer_args: TransferArgs::V1 {
-                    amount: 1,
-                    authorization_data: None,
-                },
-            }
-        );
-
-        transfer_cpi.invoke()?;
-
-        Ok(())
-    }
-
-    pub fn list_non_custodial(
         &mut self,
         price: u64,
         bumps: ListBumps,

@@ -2,8 +2,8 @@ pub use anchor_lang::{
     prelude::*,
     system_program::{Transfer, transfer}
 };
-pub use solana_program::sysvar::instructions::ID as INSTRUCTIONS_ID;
-use anchor_spl::token::{ Token, CloseAccount, close_account};
+
+use anchor_spl::token::Token;
 
 pub use crate::state::*;
 pub use crate::errors::*;
@@ -51,6 +51,7 @@ impl<'info> ModifyBid<'info> {
         require!(amount > 0 && amount != self.bid.price, MarketplaceError::InvalidAmount);
 
         if amount > self.bid.price {
+
             let transfer_program = self.system_program.to_account_info();
             let transfer_accounts = Transfer {
                 from: self.bidder.to_account_info(),
@@ -61,7 +62,9 @@ impl<'info> ModifyBid<'info> {
             transfer(transfer_cpi, amount-self.bid.price)?;
 
             self.bid.price = amount;
+
         } else {
+
             let transfer_program = self.system_program.to_account_info();
             let transfer_accounts = Transfer {
                 from: self.bidder.to_account_info(),
@@ -79,6 +82,9 @@ impl<'info> ModifyBid<'info> {
             let transfer_cpi = CpiContext::new_with_signer(transfer_program, transfer_accounts, signer_seeds);
 
             transfer(transfer_cpi, self.bid.price-amount)?;
+
+            self.bid.price = amount;
+            
         }
         
         Ok(())

@@ -9,3 +9,15 @@ pub enum MarketplaceError {
     #[msg("Choose Another Amount")]
     InvalidAmount
 }
+
+#[error_code]
+pub enum InstrospectionError {
+    #[msg("Invalid Program")]
+    InvalidTokenProgram,
+    #[msg("Invalid Instruction")]
+    InvalidIx,
+    #[msg("Invalid Amount")]
+    InvalidAmount,
+    #[msg("Invalid Creator")]
+    InvalidCreator
+}

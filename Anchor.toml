@@ -7,6 +7,9 @@ skip-lint = false
 [programs.localnet]
 anchor_marketplace = "2jvztREDjuvnKN1pGdRkuAa2pqabJBnaGvsgH89bQzvC"
 
+[programs.devnet]
+anchor_marketplace = "2jvztREDjuvnKN1pGdRkuAa2pqabJBnaGvsgH89bQzvC"
+
 [registry]
 url = "https://api.apr.dev"
 

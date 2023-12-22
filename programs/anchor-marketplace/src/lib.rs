@@ -17,7 +17,7 @@ pub mod anchor_marketplace {
     }
 
     pub fn list(ctx: Context<List>, price: u64) -> Result<()> {
-        ctx.accounts.list(price)
+        ctx.accounts.list(price, ctx.bumps)
     }
 
     pub fn delist(ctx: Context<Delist>) -> Result<()> {
@@ -25,8 +25,7 @@ pub mod anchor_marketplace {
     }
 
     pub fn buy(ctx: Context<Buy>) -> Result<()> {
-        ctx.accounts.pay_nft()?;
-        ctx.accounts.send_nft(ctx.bumps)  
+        ctx.accounts.buy(ctx.bumps)
     }
 
     pub fn bid(ctx: Context<Bid>, amount: u64) -> Result<()> {
@@ -43,14 +42,5 @@ pub mod anchor_marketplace {
 
     pub fn modify_bid(ctx: Context<ModifyBid>, amount: u64) -> Result<()> {
         ctx.accounts.modify_bid(amount, ctx.bumps)
-    }
-
-    // Bonus for finished Product
-    pub fn list_non_custodial(ctx: Context<List>, price: u64) -> Result<()> {
-        ctx.accounts.list_non_custodial(price, ctx.bumps)
-    }
-
-    pub fn delist_non_custodial(ctx: Context<Delist>) -> Result<()> {
-        ctx.accounts.delist_non_custodial(ctx.bumps)
     }
 }

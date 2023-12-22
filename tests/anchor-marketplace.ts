@@ -2,21 +2,26 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program, BN, AnchorError } from "@coral-xyz/anchor";
 import { AnchorMarketplace } from "../target/types/anchor_marketplace";
 import {
-  Keypair,
   LAMPORTS_PER_SOL,
   PublicKey,
   SYSVAR_INSTRUCTIONS_PUBKEY,
+  Transaction,
+  SystemProgram,
 } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
-  getOrCreateAssociatedTokenAccount
+  getOrCreateAssociatedTokenAccount,
+  createTransferInstruction
 } from "@solana/spl-token";
 import {
   createNft,
   mplTokenMetadata,
   verifyCollection, 
+  deserializeMetadata,
+  fetchMetadataFromSeeds,
+  findMetadataPda,
 } from "@metaplex-foundation/mpl-token-metadata";
 import { MPL_TOKEN_METADATA_PROGRAM_ID } from '@metaplex-foundation/mpl-token-metadata';
 import { base58 } from "@metaplex-foundation/umi/serializers";
@@ -70,9 +75,14 @@ describe("anchor-marketplace", () => {
   const lister = anchor.web3.Keypair.generate();
   let listerAta: anchor.web3.PublicKey;
 
+  const buyer = anchor.web3.Keypair.generate();
+  let buyerAta: anchor.web3.PublicKey;
+
   it("Airdrop", async () => {
     await connection.requestAirdrop(admin.publicKey, LAMPORTS_PER_SOL * 10).then(confirm).then(log);
     await connection.requestAirdrop(lister.publicKey, LAMPORTS_PER_SOL * 10).then(confirm).then(log);
+    await connection.requestAirdrop(buyer.publicKey, LAMPORTS_PER_SOL * 10).then(confirm).then(log);
+
   })
 
   it("Creates a new marketplace", async () => {
@@ -175,9 +185,10 @@ describe("anchor-marketplace", () => {
         name: "NFT Example",
         symbol: "EXM",
         uri: "",
-        sellerFeeBasisPoints: percentAmount(0),
+        sellerFeeBasisPoints: percentAmount(1),
         creators: [
-            {address: umiKeypair.publicKey, verified: true, share: 100 }
+            {address: umiKeypair.publicKey, verified: true, share: 50 },
+            {address: publicKey(admin.publicKey), verified: false, share: 50}
         ],
         collection: {verified: false, key},
         uses: null,
@@ -252,7 +263,7 @@ describe("anchor-marketplace", () => {
     console.log(`Your transaction signature: https://explorer.solana.com/transaction/${signature[0]}?cluster=custom&customUrl=${connection.rpcEndpoint}`)
   });
 
-  xit("Creates Listing", async () => {
+  it("Creates Listing", async () => {
 
     listingPda = await PublicKey.findProgramAddressSync(([Buffer.from("listing"), marketplacePda.toBuffer()]), program.programId)[0];
     
@@ -271,7 +282,6 @@ describe("anchor-marketplace", () => {
         listerAta,
         marketplace: marketplacePda,
         listing: listingPda,
-        listingVault,
         collection: collectionMint,
         nft: nftMint,
         metadata: nftMetadata,
@@ -297,7 +307,6 @@ describe("anchor-marketplace", () => {
         listerAta,
         marketplace: marketplacePda,
         listing: listingPda,
-        listingVault,
         nft: nftMint,
         metadata: nftMetadata,
         edition: nftMasterEdition,
@@ -310,27 +319,44 @@ describe("anchor-marketplace", () => {
       .signers([lister]).rpc({skipPreflight: true}).then(confirm).then(log);
   });
 
-  it("Creates Listing non-custodial", async () => {
+  it("Buy", async () => {
 
-    listingPda = await PublicKey.findProgramAddressSync(([Buffer.from("listing"), marketplacePda.toBuffer()]), program.programId)[0];
-    
-    const ata = await getOrCreateAssociatedTokenAccount(connection, lister, nftMint, listingPda, true);
-    listingVault = ata.address;
+    buyerAta = getAssociatedTokenAddressSync(nftMint, buyer.publicKey);
+      
+    // const metadataInfo = await connection.getAccountInfo(nftMetadata);
+    // console.log(deserializeMetadata(metadataInfo.data));
 
-    listerAta = await getAssociatedTokenAddressSync(nftMint, lister.publicKey);
+    // const umi = createUmi(connection.rpcEndpoint);
+    // const signerKeypair = createSignerFromKeypair(umi, umi.eddsa.createKeypairFromSecretKey(lister.secretKey));
+    // umi.use(signerIdentity(signerKeypair));
+    // umi.use(mplTokenMetadata())
 
-    const price = new BN(1 * LAMPORTS_PER_SOL);
+    // let metadataInfo = await fetchMetadataFromSeeds(umi, {mint: publicKey(nftMint)})
+    // console.log(metadataInfo);
 
-    try {
-    const tx = await program.methods
-      .listNonCustodial(price)
+    // let metadataInfo = await fetchMetadata(umi, publicKey(nftMetadata));
+    // console.log(metadataInfo);
+
+    // For Testing Purposes we know that lister gets 100% of the royalty
+    let creator1 = lister.publicKey;
+    let share1 = 50;
+    let creator2 = admin.publicKey;
+    let share2 = 50;
+    let seller_fee_basis_points = 100;
+    let price = 1 * LAMPORTS_PER_SOL;
+
+    let tx = new Transaction();
+
+    const buyTx = await program.methods
+      .buy()
       .accounts({
+        buyer: buyer.publicKey,
         lister: lister.publicKey,
+        buyerAta,
         listerAta,
         marketplace: marketplacePda,
+        feeVault,
         listing: listingPda,
-        listingVault: null,
-        collection: collectionMint,
         nft: nftMint,
         metadata: nftMetadata,
         edition: nftMasterEdition,
@@ -340,32 +366,29 @@ describe("anchor-marketplace", () => {
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([lister]).rpc().then(confirm).then(log);
-    } catch (e) {
-      console.log(e);
-    }
-  });
+      // .signers([buyer]).rpc().then(confirm).then(log);
 
-  it("Delist non-custodial", async () => {
+      .instruction()
 
-    const tx = await program.methods
-      .delistNonCustodial()
-      .accounts({
-        lister: lister.publicKey,
-        listerAta,
-        marketplace: marketplacePda,
-        listing: listingPda,
-        listingVault: null,
-        nft: nftMint,
-        metadata: nftMetadata,
-        edition: nftMasterEdition,
-        sysvarInstruction: SYSVAR_INSTRUCTIONS_PUBKEY,
-        tokenMetadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .signers([lister]).rpc({skipPreflight: true}).then(confirm).then(log);
+      tx.instructions = [
+        buyTx,
+        SystemProgram.transfer({
+          fromPubkey: buyer.publicKey,
+          toPubkey: creator1,
+          lamports: price * seller_fee_basis_points * share1 / 1000000,
+        }),
+        SystemProgram.transfer({
+          fromPubkey: buyer.publicKey,
+          toPubkey: creator2,
+          lamports: price * seller_fee_basis_points * share2 / 1000000,
+        }),
+      ]
+      try {
+        await provider.sendAndConfirm(tx, [ buyer ]).then(confirm).then(log);
+      } catch(e) {
+        console.log(e);
+        throw(e)
+      }
   });
 
 });
